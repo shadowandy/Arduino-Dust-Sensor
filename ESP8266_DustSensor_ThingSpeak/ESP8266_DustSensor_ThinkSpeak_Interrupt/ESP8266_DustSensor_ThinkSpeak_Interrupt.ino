@@ -10,9 +10,9 @@
 /*                                            */         
 /* Wiring Instruction:                        */
 /*      - PPD42NS Pin 1 => GND                */
-/*      - PPD42NS Pin 2 => GPIO0              */
+/*      - PPD42NS Pin 2 => TX                 */
 /*      - PPD42NS Pin 3 => 5V                 */
-/*      - PPD42NS Pin 4 => GPIO2              */
+/*      - PPD42NS Pin 4 => RX                 */
 /**********************************************/
 
 #include <ESP8266WiFi.h>                 
@@ -24,9 +24,11 @@ const char thingSpeakAPIKey[] = "fill in your thingspeak API write key";
 
 #define PM25 0
 #define PM10 1
-int pin[] = {2, 0};
+int pin[] = {3, 1};
+//int pin[] = {0, 3};
 unsigned long starttime;
 unsigned long sampletime_ms = 30000;
+unsigned long sleeptime_ms = 255000000;
 unsigned long triggerOn[2];
 unsigned long triggerOff[2];
 unsigned long lowpulseoccupancy[] = {0, 0};
@@ -36,42 +38,28 @@ boolean value[] = {HIGH, HIGH};
 boolean trigger[] = {false, false};
 
 void setup() {
-  connectWiFi();
-  pinMode(pin[PM25], INPUT); //Listen at the designated PIN
-  pinMode(pin[PM10], INPUT); //Listen at the designated PIN
+  //connectWiFi();
+  pinMode(pin[PM25], FUNCTION_3); //Set TX PIN to GPIO
+  pinMode(pin[PM10], FUNCTION_3); //Set RX PIN to GPIO
+  pinMode(pin[PM25], INPUT_PULLUP); //Listen at the designated PIN
+  attachInterrupt(pin[PM25], intrLOPM25, CHANGE); // Attaching interrupt to PIN
+  pinMode(pin[PM10], INPUT_PULLUP); //Listen at the designated PIN
+  attachInterrupt(pin[PM10], intrLOPM10, CHANGE); // Attaching interrupt to PIN
+  //connectWiFi();
   starttime = millis(); //Fetching the current time
   ESP.wdtEnable(WDTO_8S); // Enabling Watchdog
 }
 
 void loop() {
-  value[PM25] = digitalRead(pin[PM25]);
-  value[PM10] = digitalRead(pin[PM10]);
-
-  if (value[PM25] == LOW && trigger[PM25] == false) {
-    trigger[PM25] = true;
-    triggerOn[PM25] = micros();
-  }
-  if (value[PM25] == HIGH && trigger[PM25] == true) {
-    triggerOff[PM25] = micros();
-    lowpulseoccupancy[PM25] += (triggerOff[PM25] - triggerOn[PM25]);
-    trigger[PM25] = false;
-  }
-  if (value[PM10] == LOW && trigger[PM10] == false) {
-    trigger[PM10] = true;
-    triggerOn[PM10] = micros();
-  }
-  if (value[PM10] == HIGH && trigger[PM10] == true) {
-    triggerOff[PM10] = micros();
-    lowpulseoccupancy[PM10] += (triggerOff[PM10] - triggerOn[PM10]);
-    trigger[PM10] = false;
-  }
+  
   ESP.wdtFeed(); // Reset the WatchDog
   
   if ((millis() - starttime) > sampletime_ms) //Checking if it is time to sample
   {
-    ratio[PM25] = lowpulseoccupancy[PM25] / (sampletime_ms * 10.0);
+    unsigned long sampledtime = millis() - starttime;
+    ratio[PM25] = lowpulseoccupancy[PM25] / (sampledtime * 10.0);
     count[PM25] = 1.1 * pow(ratio[PM25], 3) - 3.8 * pow(ratio[PM25], 2) + 520 * ratio[PM25] + 0.62;
-    ratio[PM10] = lowpulseoccupancy[PM10] / (sampletime_ms * 10.0);
+    ratio[PM10] = lowpulseoccupancy[PM10] / (sampledtime * 10.0);
     count[PM10] = 1.1 * pow(ratio[PM10], 3) - 3.8 * pow(ratio[PM10], 2) + 520 * ratio[PM10] + 0.62;
     count[PM25] -= count[PM10];
     
@@ -101,11 +89,18 @@ void loop() {
     
     connectWiFi();
     updateThingSpeak("1=" + String(concentration[PM10], DEC) + "&2=" + String(count[PM10], DEC) + "&3=" + String(concentration[PM25], DEC) + "&4=" + String(count[PM25], DEC));
-    // Resetting for next sampling
+    // Sleeping until the next sampling
+    ESP.wdtDisable();
+    //delay(sleeptime_ms);
+    //ESP.wdtEnable(WDTO_8S);
     lowpulseoccupancy[PM25] = 0;
     lowpulseoccupancy[PM10] = 0;
-    starttime = millis();
-    ESP.wdtFeed(); // Reset the WatchDog
+    ESP.deepSleep(sleeptime_ms, WAKE_RF_DEFAULT);
+    // Resetting for next sampling
+    //lowpulseoccupancy[PM25] = 0;
+    //lowpulseoccupancy[PM10] = 0;
+    //starttime = millis();
+    //ESP.wdtFeed(); // Reset the WatchDog
   }
 }
 
@@ -130,4 +125,30 @@ void updateThingSpeak(String tsData) {
   client.print(tsData);
   client.print(F(" HTTP/1.1\r\nHost: api.thingspeak.com\r\n\r\n"));
   client.println();
+}
+
+void intrLOPM25() {
+  value[PM25] = digitalRead(pin[PM25]);
+  if (value[PM25] == LOW && trigger[PM25] == false) {
+    trigger[PM25] = true;
+    triggerOn[PM25] = micros();
+  }
+  if (value[PM25] == HIGH && trigger[PM25] == true) {
+    triggerOff[PM25] = micros();
+    lowpulseoccupancy[PM25] += (triggerOff[PM25] - triggerOn[PM25]);
+    trigger[PM25] = false;
+  }
+}
+
+void intrLOPM10() {
+  value[PM10] = digitalRead(pin[PM10]);
+  if (value[PM10] == LOW && trigger[PM10] == false) {
+    trigger[PM10] = true;
+    triggerOn[PM10] = micros();
+  }
+  if (value[PM10] == HIGH && trigger[PM10] == true) {
+    triggerOff[PM10] = micros();
+    lowpulseoccupancy[PM10] += (triggerOff[PM10] - triggerOn[PM10]);
+    trigger[PM10] = false;
+  }
 }
