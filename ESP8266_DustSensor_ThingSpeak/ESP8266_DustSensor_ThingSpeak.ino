@@ -2,6 +2,7 @@
 /* Building Arduino Dust Sensor using:        */
 /*      - ESP8266 ESP-01                      */
 /*      - 3.3-to-5v Logic Level Converter     */
+/*      - DHT22 Humidity & Temperature Sensor */
 /*      - Shinyei PPD42NS                     */
 /* http://www.sca-shinyei.com/pdf/PPD42NS.pdf */
 /*                                            */
@@ -13,9 +14,11 @@
 /*      - PPD42NS Pin 2 => TX                 */
 /*      - PPD42NS Pin 3 => 5V                 */
 /*      - PPD42NS Pin 4 => RX                 */
+/*      - DHT Data      => GPIO2              */
 /**********************************************/
 
-#include <ESP8266WiFi.h>                 
+#include <ESP8266WiFi.h>
+#include "DHT.h"
 
 const char ssid[] = "fill in your wireless SSID";
 const char pass[] = "fill in your wireless pass";
@@ -36,11 +39,16 @@ float count[] = {0, 0};
 boolean value[] = {HIGH, HIGH};
 boolean trigger[] = {false, false};
 
+#define DHTPIN 2
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
 void setup() {
   pinMode(pin[PM25], FUNCTION_3); //Set TX/RX PIN to GPIO
   pinMode(pin[PM10], FUNCTION_3); //Set TX/RX PIN to GPIO
   pinMode(pin[PM25], INPUT_PULLUP); //Listen at the designated PIN
   pinMode(pin[PM10], INPUT_PULLUP); //Listen at the designated PIN
+  dht.begin();
   starttime = millis(); //Fetching the current time
   ESP.wdtEnable(WDTO_8S); // Enabling Watchdog
 }
@@ -99,11 +107,15 @@ void loop() {
     double mass25 = density * vol25;
     concentration[PM25] = (count[PM25]) * K * mass25;
     // End of mass concentration calculation
+    
+    ESP.wdtFeed();
+    float humidity = dht.readHumidity();
+    float temperature = dht.readTemperature();
 
     ESP.wdtFeed(); // Reset the WatchDog
     
     connectWiFi();
-    updateThingSpeak("1=" + String(concentration[PM10], DEC) + "&2=" + String(count[PM10], DEC) + "&3=" + String(concentration[PM25], DEC) + "&4=" + String(count[PM25], DEC));
+    updateThingSpeak("1=" + String(concentration[PM10], DEC) + "&2=" + String(count[PM10], DEC) + "&3=" + String(concentration[PM25], DEC) + "&4=" + String(count[PM25], DEC) + "&5=" + String(humidity, 1) + "&6=" + String(temperature, 1));
     // Sleeping until the next sampling
     ESP.wdtDisable();
     ESP.deepSleep(sleeptime_ms * 1000, WAKE_RF_DEFAULT); // Using deepsleep
