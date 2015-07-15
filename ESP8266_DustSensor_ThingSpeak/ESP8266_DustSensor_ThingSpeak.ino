@@ -18,7 +18,7 @@
 /**********************************************/
 
 #include <ESP8266WiFi.h>
-#include "DHT.h"
+#include "DHT.h" //adafruit DHT-sensor library from https://github.com/adafruit/DHT-sensor-library
 
 const char ssid[] = "fill in your wireless SSID";
 const char pass[] = "fill in your wireless pass";
@@ -27,10 +27,11 @@ const char thingSpeakAPIKey[] = "fill in your thingspeak API write key";
 
 #define PM25 0
 #define PM10 1
-int pin[] = {3, 1};
+int pin[] = {3, 1};                  //GPIO pins for PM2.5 and PM10 wire respectively
+unsigned long sampletime_ms = 30000; //Duration in milliseconds for air quality sampling
+unsigned long sleeptime_ms = 255000; //Duration in milliseconds for sleeping/deep sleep
 unsigned long starttime;
-unsigned long sampletime_ms = 30000; //time in milliseconds
-unsigned long sleeptime_ms = 255000; //time in milliseconds
+unsigned long sampledtime;
 unsigned long triggerOn[2];
 unsigned long triggerOff[2];
 unsigned long lowpulseoccupancy[] = {0, 0};
@@ -39,13 +40,13 @@ float count[] = {0, 0};
 boolean value[] = {HIGH, HIGH};
 boolean trigger[] = {false, false};
 
-#define DHTPIN 2
-#define DHTTYPE DHT22
+#define DHTPIN 2 //GPIO pin for DHT sensor
+#define DHTTYPE DHT22 //Defining the DHT sensor model
 DHT dht(DHTPIN, DHTTYPE);
 
 void setup() {
-  pinMode(pin[PM25], FUNCTION_3); //Set TX/RX PIN to GPIO
-  pinMode(pin[PM10], FUNCTION_3); //Set TX/RX PIN to GPIO
+  pinMode(pin[PM25], FUNCTION_3);   //Set TX/RX PIN to GPIO
+  pinMode(pin[PM10], FUNCTION_3);   //Set TX/RX PIN to GPIO
   pinMode(pin[PM25], INPUT_PULLUP); //Listen at the designated PIN
   pinMode(pin[PM10], INPUT_PULLUP); //Listen at the designated PIN
   dht.begin();
@@ -79,7 +80,7 @@ void loop() {
   
   if ((millis() - starttime) > sampletime_ms) //Checking if it is time to sample
   {
-    unsigned long sampledtime = millis() - starttime;
+    sampledtime = millis() - starttime;
     ratio[PM25] = lowpulseoccupancy[PM25] / (sampledtime * 10.0);
     count[PM25] = 1.1 * pow(ratio[PM25], 3) - 3.8 * pow(ratio[PM25], 2) + 520 * ratio[PM25] + 0.62;
     ratio[PM10] = lowpulseoccupancy[PM10] / (sampledtime * 10.0);
@@ -108,19 +109,20 @@ void loop() {
     concentration[PM25] = (count[PM25]) * K * mass25;
     // End of mass concentration calculation
     
-    ESP.wdtFeed();
+    ESP.wdtFeed(); // Reset the WatchDog
+    // Humidity and temperature reading
     float humidity = dht.readHumidity();
     float temperature = dht.readTemperature();
 
     ESP.wdtFeed(); // Reset the WatchDog
-    
     connectWiFi();
     updateThingSpeak("1=" + String(concentration[PM10], DEC) + "&2=" + String(count[PM10], DEC) + "&3=" + String(concentration[PM25], DEC) + "&4=" + String(count[PM25], DEC) + "&5=" + String(humidity, 1) + "&6=" + String(temperature, 1));
+    
     // Sleeping until the next sampling
-    ESP.wdtDisable();
-    ESP.deepSleep(sleeptime_ms * 1000, WAKE_RF_DEFAULT); // Using deepsleep
+    ESP.deepSleep(sleeptime_ms * 1000, WAKE_RF_DEFAULT); // Using deepsleep. Connect RST to GPIO16
     
     /* Below chunk is for normal sleep
+    ESP.wdtDisable();
     delay(sleeptime_ms);
     ESP.wdtEnable(WDTO_8S);
     // Resetting for next sampling
