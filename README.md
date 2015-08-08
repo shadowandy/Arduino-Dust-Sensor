@@ -22,4 +22,4 @@ Modifications
 
 The following modifications are performed:
 * RST pin is connected to GPIO16 on the ESP8266 (ESP-01)
-* 10uF 25V Tantalum Capacitor connected between VCC and GND on the ESP8266 (ESP-01)
+* 10uF 25V Tantalum Capacitor connected between VCC and GND on the ESP8266 (ESP-01) (http://www.shadowandy.net/2015/08/esp8266-breadboard-adapter.htm)
