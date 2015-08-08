@@ -25,13 +25,13 @@ const char pass[] = "fill in your wireless pass";
 const char thingSpeakAddress[] = "api.thingspeak.com";
 const char thingSpeakAPIKey[] = "fill in your thingspeak API write key";
 
+#define DEEPSLEEP
 #define PM25 0
 #define PM10 1
 int pin[] = {3, 1};                  //GPIO pins for PM2.5 and PM10 wire respectively
 unsigned long sampletime_ms = 30000; //Duration in milliseconds for air quality sampling
 unsigned long sleeptime_ms = 255000; //Duration in milliseconds for sleeping/deep sleep
 unsigned long starttime;
-unsigned long sampledtime;
 unsigned long triggerOn[2];
 unsigned long triggerOff[2];
 unsigned long lowpulseoccupancy[] = {0, 0};
@@ -45,6 +45,8 @@ boolean trigger[] = {false, false};
 DHT dht(DHTPIN, DHTTYPE);
 
 void setup() {
+  Serial.begin(115200); //Doing this to swap the UART to free up TX and RX for GPIO
+  Serial.swap(); //Swapping Serial to use GPIO13 and GPIO15
   pinMode(pin[PM25], FUNCTION_3);   //Set TX/RX PIN to GPIO
   pinMode(pin[PM10], FUNCTION_3);   //Set TX/RX PIN to GPIO
   pinMode(pin[PM25], INPUT_PULLUP); //Listen at the designated PIN
@@ -80,10 +82,9 @@ void loop() {
   
   if ((millis() - starttime) > sampletime_ms) //Checking if it is time to sample
   {
-    sampledtime = millis() - starttime;
-    ratio[PM25] = lowpulseoccupancy[PM25] / (sampledtime * 10.0);
+    ratio[PM25] = lowpulseoccupancy[PM25] / (sampletime_ms * 10.0);
     count[PM25] = 1.1 * pow(ratio[PM25], 3) - 3.8 * pow(ratio[PM25], 2) + 520 * ratio[PM25] + 0.62;
-    ratio[PM10] = lowpulseoccupancy[PM10] / (sampledtime * 10.0);
+    ratio[PM10] = lowpulseoccupancy[PM10] / (sampletime_ms * 10.0);
     count[PM10] = 1.1 * pow(ratio[PM10], 3) - 3.8 * pow(ratio[PM10], 2) + 520 * ratio[PM10] + 0.62;
     count[PM25] -= count[PM10];
     
@@ -118,19 +119,20 @@ void loop() {
     connectWiFi();
     updateThingSpeak("1=" + String(concentration[PM10], DEC) + "&2=" + String(count[PM10], DEC) + "&3=" + String(concentration[PM25], DEC) + "&4=" + String(count[PM25], DEC) + "&5=" + String(humidity, 1) + "&6=" + String(temperature, 1));
     
+    // Resetting for next sampling
+    lowpulseoccupancy[PM25] = 0;
+    lowpulseoccupancy[PM10] = 0;
     // Sleeping until the next sampling
+    #ifdef DEEPSLEEP
     ESP.deepSleep(sleeptime_ms * 1000, WAKE_RF_DEFAULT); // Using deepsleep. Connect RST to GPIO16
-    
-    /* Below chunk is for normal sleep
+    #else
     ESP.wdtDisable();
     delay(sleeptime_ms);
     ESP.wdtEnable(WDTO_8S);
     // Resetting for next sampling
-    lowpulseoccupancy[PM25] = 0;
-    lowpulseoccupancy[PM10] = 0;
     starttime = millis();
     ESP.wdtFeed(); // Reset the WatchDog
-    */
+    #endif
   }
 }
 
